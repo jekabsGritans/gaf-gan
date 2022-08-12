@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod, abstractstaticmethod
 
 class GanTrainer(ABC):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device):
+                latent_dimension, device, static_samples=9, epoch_callback=None):
         self.g = generator
         self.c = critic
         self.g_optim = gen_optimizer
@@ -24,12 +24,15 @@ class GanTrainer(ABC):
         self._curr_epoch = 0
         self._epochs = 0
 
-        latent_shape = (1, self.latent_dim)
+        self._n_static_samples = static_samples
+        latent_shape = (self._n_static_samples, self.latent_dim)
         self._static_noise = self.sample_latent(latent_shape)   
         if self.device:
             self._static_noise = self._static_noise.to(self.device)
 
         self.static_samples = []
+
+        self.epoch_callback = epoch_callback
 
     def save_sample(self):
         sample = self.g(self._static_noise).detach().cpu().numpy()
@@ -59,6 +62,8 @@ class GanTrainer(ABC):
         for epoch in range(epochs):
             self._curr_epoch = epoch+1
             self.train_epoch(data_loader)
+            if self.epoch_callback:
+                self.epoch_callback(self)
         
     def sample_generator(self, n):
         latent_shape = (n, self.latent_dim)
@@ -87,10 +92,8 @@ class GanTrainer(ABC):
 
 
 class WGanTrainer(GanTrainer):
-    def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, critic_iterations=5, weigth_clip=0.01):
-        super().__init__(generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device)
+    def __init__(self, *args, critic_iterations=5, weigth_clip=0.01, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.__step_num = 0
         self.weight_clip = weigth_clip
@@ -153,9 +156,9 @@ class WGanTrainer(GanTrainer):
 
 class WGanGpTrainer(WGanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device=None, critic_iterations=5, gp_weight=10):
+                latent_dimension, device=None, static_samples=9, critic_iterations=5, gp_weight=10):
         super().__init__(generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, critic_iterations=critic_iterations)
+                latent_dimension, device, static_samples, critic_iterations=critic_iterations)
         
         self.gp_weight = gp_weight
         self.losses = {'g': [], 'c': [], 'gp': []}

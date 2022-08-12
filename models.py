@@ -6,23 +6,19 @@ class Discriminator(nn.Module):
     def __init__(self) -> None:
         super(Discriminator, self).__init__()
         self.main = nn.Sequential(
-            # Input is 1 x 64 x 64
+            # Input is 1 x 32 x 32
             nn.Conv2d(1, 64, (4, 4), (2, 2), (1, 1), bias=True),
             nn.LeakyReLU(0.2, True),
-            # State size. 64 x 32 x 32
+            # State size. 64 x 16 x 16
             nn.Conv2d(64, 128, (4, 4), (2, 2), (1, 1), bias=False),
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2, True),
-            # State size. 128 x 16 x 16
+            # State size. 128 x 8 x 8
             nn.Conv2d(128, 256, (4, 4), (2, 2), (1, 1), bias=False),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2, True),
-            # State size. 256 x 8 x 8
-            nn.Conv2d(256, 512, (4, 4), (2, 2), (1, 1), bias=False),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2, True),
             # State size. 512 x 4 x 4
-            nn.Conv2d(512, 1, (4, 4), (1, 1), (0, 0), bias=True),
+            nn.Conv2d(256, 1, (4, 4), (1, 1), (0, 0), bias=True),
             # nn.Sigmoid() # We want critic to be unbounded
         )
 
@@ -31,36 +27,25 @@ class Discriminator(nn.Module):
         out = torch.flatten(out, 1)
         return out
 
-
 class Generator(nn.Module):
     def __init__(self) -> None:
         super(Generator, self).__init__()
-        self.main = nn.Sequential(
-            # Input is 100, going into a convolution.
-            nn.ConvTranspose2d(100, 512, (4, 4), (1, 1), (0, 0), bias=False),
-            nn.BatchNorm2d(512),
-            nn.ReLU(True),
-            # state size. 512 x 4 x 4
-            nn.ConvTranspose2d(512, 256, (4, 4), (2, 2), (1, 1), bias=False),
-            nn.BatchNorm2d(256),
-            nn.ReLU(True),
-            # state size. 256 x 8 x 8
+        self.fc = nn.Linear(100, 256 * 4 * 4)
+        self.cnn = nn.Sequential(
             nn.ConvTranspose2d(256, 128, (4, 4), (2, 2), (1, 1), bias=False),
             nn.BatchNorm2d(128),
-            nn.ReLU(True),
-            # state size. 128 x 16 x 16
+            nn.LeakyReLU(0.3, True),
             nn.ConvTranspose2d(128, 64, (4, 4), (2, 2), (1, 1), bias=False),
             nn.BatchNorm2d(64),
-            nn.ReLU(True),
-            # state size. 64 x 32 x 32
+            nn.LeakyReLU(0.3,True),
             nn.ConvTranspose2d(64, 1, (4, 4), (2, 2), (1, 1), bias=True),
             nn.Tanh()
-            # state size. 1 x 64 x 64
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        x = x.view(x.size(0), 100, 1, 1)
-        out = self.main(x)
+        x = self.fc(x)
+        x = x.view(x.size(0), 256, 4, 4)
+        out = self.cnn(x)
         return out
 
     def _initialize_weights(self) -> None:
