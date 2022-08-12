@@ -26,6 +26,9 @@ class GanTrainer(ABC):
 
         latent_shape = (1, self.latent_dim)
         self._static_noise = self.sample_latent(latent_shape)   
+        if self.device:
+            self._static_noise = self._static_noise.to(self.device)
+
         self.static_samples = []
 
     def save_sample(self):
@@ -60,11 +63,15 @@ class GanTrainer(ABC):
     def sample_generator(self, n):
         latent_shape = (n, self.latent_dim)
         noise = self.sample_latent(latent_shape)
+        if self.device:
+            noise = noise.to(self.device)
         return self.g(noise)
 
     def sample(self, n):
         latent_shape = (n, self.latent_dim)
         noise = self.sample_latent(latent_shape)
+        if self.device:
+            noise = noise.to(self.device)
         return self.g(noise).detach().cpu().numpy()
 
     def plot_losses(self):
