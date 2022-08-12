@@ -34,6 +34,8 @@ class GanTrainer(ABC):
 
         self.epoch_callback = epoch_callback
 
+        self._step_num = 0
+
     def save_sample(self):
         sample = self.g(self._static_noise).detach().cpu().numpy()
         self.static_samples.append(sample)
@@ -56,6 +58,7 @@ class GanTrainer(ABC):
         return status_bar
 
     def train(self, data_loader, epochs):
+        self._step_num=0
         self.save_sample()
         print(f"Training...")
         self._epochs = epochs
@@ -91,11 +94,71 @@ class GanTrainer(ABC):
         return sample
 
 
-class WGanTrainer(GanTrainer):
-    def __init__(self, *args, critic_iterations=5, weigth_clip=0.01, **kwargs):
-        super().__init__(*args, **kwargs)
+class ClassicalGanTrainer(GanTrainer):
+    def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
+                latent_dimension, device, static_samples, epoch_callback):
+    
+        super().__init__(generator, critic, gen_optimizer, critic_optimizer,
+                latent_dimension, device, static_samples, epoch_callback)
 
-        self.__step_num = 0
+    
+    def train_critic_iteration(self, x_real):
+        if isinstance(x_real, (list, tuple)):
+            x_real = x_real[0]
+
+        if self.device:
+            x_real = x_real.to(self.device)
+
+        x_fake = self.sample_generator(x_real.size(0))
+
+        loss = -(torch.log(self.c(x_real)).mean() + torch.log(1 - self.c(x_fake)).mean())
+
+        self.c_optim.zero_grad()
+        loss.backward()
+        self.c_optim.step()
+        self.losses['c'].append(loss.item())
+    
+    def train_gen_iteration(self, x_real):
+        if isinstance(x_real, (list, tuple)):
+            x_real = x_real[0]
+        batch_size = x_real.size(0)
+        x_fake = self.sample_generator(batch_size)
+
+        loss = -torch.log(self.c(x_fake)).mean()
+        self.g_optim.zero_grad()
+        loss.backward()
+        self.g_optim.step()
+        self.losses['g'].append(loss.item())
+
+    def train_epoch(self, data_loader):
+        for x_real in self.epoch_wrapper(data_loader):
+            self.train_critic_iteration(x_real)
+            self.train_gen_iteration(x_real)
+
+            if self._step_num % 10 == 0:
+                self.save_sample()
+            
+            self._step_num += 1
+
+class WGanTrainer(GanTrainer):
+    def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
+                latent_dimension, device, static_samples=9, epoch_callback=None,
+            critic_iterations=5,
+            weigth_clip=0.01
+            ):
+
+        super().__init__(
+                generator=generator,
+                critic=critic,
+                gen_optimizer=gen_optimizer,
+                critic_optimizer=critic_optimizer,
+                latent_dimension=latent_dimension,
+                device=device,
+                static_samples=static_samples,
+                epoch_callback=epoch_callback,
+                )
+        self._step_num=0
+
         self.weight_clip = weigth_clip
         self.critic_iterations = critic_iterations
         
@@ -108,13 +171,13 @@ class WGanTrainer(GanTrainer):
                 x_real = x_real.to(self.device)
 
             self.train_critic_iteration(x_real)
-            if self.__step_num % self.critic_iterations == 0:
+            if self._step_num % self.critic_iterations == 0:
                 self.train_gen_iteration(x_real)
             
-            if self.__step_num % 10 == 0:
+            if self._step_num % 10 == 0:
                 self.save_sample()
                 
-            self.__step_num += 1
+            self._step_num += 1
 
     def train_critic_iteration(self, x_real):
         batch_size = x_real.size(0)
@@ -156,22 +219,33 @@ class WGanTrainer(GanTrainer):
 
 class WGanGpTrainer(WGanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device=None, static_samples=9, critic_iterations=5, gp_weight=10):
-        super().__init__(generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, static_samples, critic_iterations=critic_iterations)
+                latent_dimension, device=None, static_samples=9, epoch_callback=None,
+                critic_iterations=5,
+            gp_weight=10):
+
+        super().__init__(
+            generator=generator,
+            critic=critic,
+            gen_optimizer=gen_optimizer,
+            critic_optimizer=critic_optimizer,
+            latent_dimension=latent_dimension,
+            device=device,
+            static_samples=static_samples,
+            epoch_callback=epoch_callback,
+            critic_iterations=critic_iterations,
+            )
         
         self.gp_weight = gp_weight
         self.losses = {'g': [], 'c': [], 'gp': []}
 
-
     def _gradient_penalty(self, x_real, x_fake):
         batch_size = x_real.size()[0]
-        alpha = torch.rand(batch_size, 1)
-        alpha = alpha.expand_as(x_real)
+        alpha = torch.rand(batch_size, 1).view(batch_size,1,1,1)
+        alpha = alpha.expand(x_real.size())
         if self.device:
             alpha = alpha.to(self.device)
         
-        interpolates = alpha * x_real + (1 - alpha) * x_fake
+        interpolates = alpha * x_real + ((1 - alpha) * x_fake)
         interpolates.requires_grad_(True)
         if self.device:
             interpolates = interpolates.to(self.device)
@@ -181,14 +255,12 @@ class WGanGpTrainer(WGanTrainer):
         # Calculate gradients of critic estimations wrt interpolates
         gradients = torch.autograd.grad(outputs=pred_interpolates, inputs=interpolates,
                                         grad_outputs=torch.ones(pred_interpolates.size()).to(self.device) if self.device else torch.ones(pred_interpolates.size()),
-                                        create_graph=True, retain_graph=True)[0]
+                                        create_graph=True, retain_graph=True, only_inputs=True)[0]
         
-        gradients = gradients.view(batch_size, -1)
+        # gradient_penalty = ((gradients_norm - 1) ** 2).mean() * self.gp_weight
+        
+        gradient_penalty = torch.mean((1. - torch.sqrt(1e-8+torch.sum(gradients.view(gradients.size(0), -1)**2, dim=1)))**2)
 
-        # Add epsilon to prevent nans
-        gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
-        
-        gradient_penalty = ((gradients_norm - 1) ** 2).mean() * self.gp_weight
         return gradient_penalty
 
     def train_critic_iteration(self, x_real):
@@ -235,145 +307,3 @@ class WGanGpTrainer(WGanTrainer):
         plt.plot(rolling(c_wo_gp[::self.critic_iterations], 10), label='Critic')
         plt.legend()
         plt.show() 
-
-class depWGanGpTrainer:
-
-    def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                noise_size, gp_weight=10, critic_iterations=5, device=None):
-        self.g = generator
-        self.c = critic
-        self.g_optim = gen_optimizer
-        self.c_optim = critic_optimizer
-        self.losses = {'g': [], 'c': [], 'GP': [], 'gradient_norm': []}
-        self.device = device
-        self.gp_weight = gp_weight
-        self.critic_iterations = critic_iterations
-        self.noise_size = noise_size
-
-        self.num_steps = 0
-
-        if self.device:
-            self.g.to(self.device)
-            self.c.to(self.device)
-
-    def _critic_train_iteration(self, x_real):
-        batch_size = x_real.shape[0]
-        x_fake = self._sample_generator(batch_size)
-
-        if self.device:
-            x_real = x_real.to(self.device)
-
-        self.c_optim.zero_grad()
-        # Critic estimations
-        pred_real = self.c(x_real)
-        pred_fake = self.c(x_fake)
-
-        # Gradient penalty
-        gp = self._gradient_penalty(x_real, x_fake)
-        # gp = gradient_penalty(self.c, x_real, x_fake)
-        self.losses['GP'].append(gp.item())
-
-        # Critic loss
-        critic_loss = pred_fake.mean() - pred_real.mean() + gp # Inverted, because critic is maximising
-        # critic_loss = -(torch.mean(critic_real) - torch.mean(critic_fake)) + gp*self.gp_weight
-
-        critic_loss.backward()
-        self.c_optim.step()
-
-        self.losses['c'].append(critic_loss.item())
-
-    def _generator_train_iteration(self, x_real):
-        batch_size = x_real.shape[0]
-        x_fake = self._sample_generator(batch_size)
-
-        # Critic estimations
-        pred_fake = self.c(x_fake)
-
-        # Generator loss
-        self.g_optim.zero_grad()
-        gen_loss = -pred_fake.mean()
-        gen_loss.backward()
-        self.g_optim.step()
-
-        self.losses['g'].append(gen_loss.item())
-
-    def _gradient_penalty(self, x_real, x_fake):
-        batch_size = x_real.size()[0]
-        alpha = torch.rand(batch_size, 1)
-        alpha = alpha.expand_as(x_real)
-        if self.device:
-            alpha = alpha.to(self.device)
-        
-        interpolates = alpha * x_real + (1 - alpha) * x_fake
-        interpolates.requires_grad_(True)
-        if self.device:
-            interpolates = interpolates.to(self.device)
-
-        pred_interpolates = self.c(interpolates)
-
-        # Calculate gradients of critic estimations wrt interpolates
-        gradients = torch.autograd.grad(outputs=pred_interpolates, inputs=interpolates,
-                                        grad_outputs=torch.ones(pred_interpolates.size()).to(self.device) if self.device else torch.ones(pred_interpolates.size()),
-                                        create_graph=True, retain_graph=True)[0]
-        
-        gradients = gradients.view(batch_size, -1)
-        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().item())
-
-        # Add epsilon to prevent nans
-        gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
-        
-        gradient_penalty = ((gradients_norm - 1) ** 2).mean() * self.gp_weight
-        return gradient_penalty
-
-
-    def _train_epoch(self, data_loader, epoch):
-        for x_real in tqdm(data_loader):
-            x_real = x_real.float()
-            self._critic_train_iteration(x_real)
-            self.num_steps += 1
-            # Instead of training critic on same batch few iterations, only train generator every few iterations
-            if self.num_steps % self.critic_iterations == 0:
-                self._generator_train_iteration(x_real)
-
-    def train(self, data_loader, epochs):
-        for epoch in range(epochs):
-            self._train_epoch(data_loader, epoch+1)
-
-    def plot_losses(self):
-        self._plot(self.losses['g'], label='Generator')
-        self._plot(self.losses['c'][::self.critic_iterations], label='Critic')
-        plt.legend()
-        plt.show()
-
-        # self._plot(self.losses['GP'], label='GP')
-        # self._plot(self.losses['gradient_norm'], label='Gradient norm')
-        # plt.legend()
-        # plt.show()
-
-    def plot_samples(self, n=3):
-        for data in self.sample(n):
-            plt.plot(data)
-        plt.show()
-        
-    def _plot(self, data, *args, **kwargs):
-        plt.plot(rolling(data,1), *args, **kwargs)
-
-    def _sample_generator(self, n):
-        latent_shape = (n, self.noise_size)
-        latent_samples = self.sample_latent(latent_shape)
-        latent_samples.requires_grad_(True)
-        if self.device:
-            latent_samples = latent_samples.to(self.device)
-
-        return self.g(latent_samples)
-    
-    def sample(self, n):
-        latent_shape = (n, self.noise_size)
-        latent_samples = self.sample_latent(latent_shape)
-        return self.g(latent_samples).data.cpu().numpy()
-
-    def sample_latent(self, shape):
-        sample = torch.randn(shape)
-        if self.device:
-            sample = sample.to(self.device)
-        return sample
