@@ -10,7 +10,7 @@ def pt_gaf(x):
 def reverse_gaf(mat):
     idxs = np.diag_indices_from(mat)
     vals = mat[idxs]
-    out = np.cos((np.arccos(vals)/2))
+    out = torch.cos((torch.arccos(vals)/2))
     return out
 
 def stretch(series):
