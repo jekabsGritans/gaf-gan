@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 def pt_gaf(x):
@@ -8,8 +7,7 @@ def pt_gaf(x):
     return x
 
 def reverse_gaf(mat):
-    idxs = np.diag_indices_from(mat)
-    vals = mat[idxs]
+    vals = torch.diagonal(mat)
     out = torch.cos((torch.arccos(vals)/2))
     return out
 
