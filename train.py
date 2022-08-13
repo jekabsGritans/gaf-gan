@@ -56,6 +56,8 @@ def main():
         if not os.path.isdir(args.tboard_dir):
             os.makedirs(args.tboard_dir)
     
+
+    #TODO: Wgan-gp seems to not converge
     # Define training methods
     trainers = {
         'wgan': WGanTrainer
@@ -64,6 +66,8 @@ def main():
                 critic=d,
                 gen_optimizer=optim.RMSprop(g.parameters(), lr=args.lr if args.lr > 0 else 5e-5),
                 critic_optimizer=optim.RMSprop(d.parameters(), lr=args.lr if args.lr > 0 else 5e-5),
+                # gen_optimizer=optim.Adam(g.parameters(), lr=args.lr if args.lr > 0 else 1e-4, betas=(0.0,0.9)),
+                # critic_optimizer=optim.Adam(d.parameters(), lr=args.lr if args.lr > 0 else 1e-4, betas=(0.0,0.9)),
                 latent_dimension=LATENT_DIM,
                 device=device,
                 model_dir=args.model_dir,

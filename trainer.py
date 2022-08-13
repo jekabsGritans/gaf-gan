@@ -8,6 +8,7 @@ import os
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 
+
 class GanTrainer(ABC):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
                 latent_dimension, device, static_samples=16, model_dir=None,
@@ -32,6 +33,7 @@ class GanTrainer(ABC):
         self._static_noise = self.sample_latent(latent_shape)   
         self.static_samples = []
         self._step_num = 0
+        self._checkpoint_num = 0
 
     @abstractmethod
     def train_critic_iteration(self, x_real):
@@ -102,7 +104,19 @@ class GanTrainer(ABC):
         self.static_samples.append(static_samples)
 
         if self.writer:
-            
+            # Descrine training           
+            desc = f"""
+            Training {self.__class__.__name__}
+            gen: {self.g.__class__.__name__}
+            g_optim: {self.g_optim.__class__.__name__} (lr: {self.g_optim.param_groups[0]['lr']})
+            c: {self.c.__class__.__name__}
+            c_optim: {self.c_optim.__class__.__name__} (lr: {self.c_optim.param_groups[0]['lr']})
+
+            epochs: {epochs}
+            batch_size: {data_loader.batch_size}
+            """
+            self.writer.add_text('Training', desc, self._step_num)
+
             # Show dataset samples
             training_examples = item(next(iter(data_loader)))
             if self.device:
@@ -166,8 +180,10 @@ class GanTrainer(ABC):
     
     def save_progress(self):
         if self.model_dir:
-            torch.save(self.g.state_dict(), f'{self.model_dir}/g.pt')
-            torch.save(self.c.state_dict(), f'{self.model_dir}/c.pt')
+            print('Saving model checkpoint...')
+            torch.save(self.g.state_dict(), f'{self.model_dir}/g{self._checkpoint_num}.pt')
+            torch.save(self.c.state_dict(), f'{self.model_dir}/c{self._checkpoint_num}.pt')
+            self._checkpoint_num += 1
 
 
 
@@ -299,7 +315,7 @@ class WGanTrainer(GanTrainer):
 
 class WGanGpTrainer(WGanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device=None, static_samples=9,
+                latent_dimension, device=None, static_samples=16,
                 model_dir=None, write_dir=None, checkpoint=None,
                 checkpoint_interval=None, critic_iterations=5,
             gp_weight=10):
@@ -343,7 +359,7 @@ class WGanGpTrainer(WGanTrainer):
         
         # gradient_penalty = ((gradients_norm - 1) ** 2).mean() * self.gp_weight
         
-        gradient_penalty = torch.mean((1. - torch.sqrt(1e-8+torch.sum(gradients.view(gradients.size(0), -1)**2, dim=1)))**2)
+        gradient_penalty = torch.mean((1. - torch.sqrt(1e-12+torch.sum(gradients.view(gradients.size(0), -1)**2, dim=1)))**2)
 
         return gradient_penalty
 
