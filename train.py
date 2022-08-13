@@ -1,4 +1,3 @@
-from asyncore import write
 from models import Discriminator, Generator
 from dataset import ForexData
 from trainer import WGanGpTrainer, WGanTrainer
@@ -12,15 +11,15 @@ def main():
     parser.add_argument('--data-csv', type=str, default='data/eurusd_minute.csv', help="Path to the data csv file.")
     parser.add_argument('--data-column', type=str, default='BidClose', help="Name of the column in the csv file that contains the time-series data.")
     parser.add_argument('--gan-type', default='wgan-gp', help='Type of GAN to use. One of "wgan" or "wgan-gp".')
-    parser.add_argument('--batch-size', type=int, default=16, help='Batch size.')
+    parser.add_argument('--batch-size', type=int, default=32, help='Batch size.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=0, help='Overwrite learning rate. If 0, use a default value.')
     parser.add_argument('--critic-iters', type=int, default=5, help='Number of critic iterations per generator iteration.')
-    parser.add_argument('--weight-clip', type=float, default=0, help='Clip weights to enforce Lipshitz constraint.')
+    parser.add_argument('--weight-clip', type=float, default=1e-2, help='Clip weights to enforce Lipshitz constraint.')
     parser.add_argument('--penalty-weight', type=float, default=10, help='Weight of the gradient penalty used to enforce Lipschitz constraint.')
     parser.add_argument('--load-checkpoint', default=None, help='Directory to load checkpoint from.')
     parser.add_argument('--checkpoint-interval', type=int, default=10, help='Number of epochs between checkpoints.')
-    parser.add_argument('--checkpoint-dir', default=None, help='Directory to save checkpoints to.')
+    parser.add_argument('--model-dir', default=None, help='Directory to save models to.')
     parser.add_argument('--tboard-dir', default=None, help='Directory to save tensorboard logs to.')
 
     # python train.py  --tboard-dir ./runs/wgan-gp/ --epochs 10
@@ -34,10 +33,10 @@ def main():
     from torch.utils.data import DataLoader
 
     if os.path.isfile('./data/forex.pt'):
-        dataset = torch.load('./data/forex.pt')
+        dataset = torch.load('./data/train_data.pt')
     else:
         dataset = ForexData(args.data,SEQ_LENGTH)
-        torch.save(dataset, './data/forex.pt')
+        torch.save(dataset, './data/train_data.pt')
 
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
@@ -59,9 +58,10 @@ def main():
                 critic_optimizer=optim.RMSprop(d.parameters(), lr=args.lr if args.lr > 0 else 5e-5),
                 latent_dimension=LATENT_DIM,
                 device=device,
-                model_dir=args.checkpoint_dir,
+                model_dir=args.model_dir,
                 write_dir=args.tboard_dir,
                 checkpoint=args.load_checkpoint,
+                checkpoint_interval=args.checkpoint_interval,
                 critic_iterations=args.critic_iters,
                 weigth_clip=args.weight_clip,
             ),
@@ -73,9 +73,10 @@ def main():
                 critic_optimizer=optim.Adam(d.parameters(), lr=args.lr if args.lr > 0 else 1e-4, betas=(0.0,0.9)),
                 latent_dimension=LATENT_DIM,
                 device=device,
-                model_dir=args.checkpoint_dir,
+                model_dir=args.model_dir,
                 write_dir=args.tboard_dir,
                 checkpoint=args.load_checkpoint,
+                checkpoint_interval=args.checkpoint_interval,
                 critic_iterations=args.critic_iters,
                 gp_weight=args.penalty_weight,
             ),

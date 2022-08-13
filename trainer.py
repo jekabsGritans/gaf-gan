@@ -14,8 +14,6 @@ class GanTrainer(ABC):
                 write_dir=None, checkpoint=None, checkpoint_interval=0):
         self.g = generator
         self.c = critic
-
-
         self.checkpoint = checkpoint
         self.checkpoint_interval = checkpoint_interval
         self.writer = None
@@ -71,6 +69,13 @@ class GanTrainer(ABC):
             grid = torchvision.utils.make_grid(static_samples)
             self.writer.add_image('Static Samples', grid, self._step_num)
 
+            # Show dynamic samples
+            dynamic_samples = self.sample_generator(self._n_static_samples)
+            grid = torchvision.utils.make_grid(dynamic_samples)
+            self.writer.add_image('Dynamic Samples', grid, self._step_num)
+
+
+
 
     def epoch_wrapper(self, data_loader):
         status_bar = tqdm(data_loader)
@@ -113,7 +118,7 @@ class GanTrainer(ABC):
 
             # Show pre-training static samples
             grid = torchvision.utils.make_grid(static_samples)
-            self.writer.add_image('Static Samples', grid, 0)
+            self.writer.add_image('Progress', grid, 0)
 
         print("Training...")
         self._epochs = epochs
