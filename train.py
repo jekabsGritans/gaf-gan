@@ -9,7 +9,8 @@ import torch
 
 def main():
     parser = argparse.ArgumentParser('Train a Wasserstein imaged-based-GAN on time-series data.')
-    parser.add_argument('--data', type=str, default='data/eurusd_minute.csv', help="Path to the data csv file. (Must have a 'Prices' column!)")
+    parser.add_argument('--data-csv', type=str, default='data/eurusd_minute.csv', help="Path to the data csv file.")
+    parser.add_argument('--data-column', type=str, default='BidClose', help="Name of the column in the csv file that contains the time-series data.")
     parser.add_argument('--gan-type', default='wgan-gp', help='Type of GAN to use. One of "wgan" or "wgan-gp".')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')

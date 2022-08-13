@@ -8,12 +8,12 @@ def unsqueeze(x):
     return x.unsqueeze(0)
 
 class ForexData(Dataset):
-    def __init__(self, csv, seq_length, transforms=[stretch, pt_gaf, unsqueeze]):
+    def __init__(self, csv, data_column, seq_length, transforms=[stretch, pt_gaf, unsqueeze]):
         df = pd.read_csv(csv)
         try:
-            prices = df['Prices'].values
+            prices = df[data_column].values
         except KeyError:
-            raise KeyError('No Prices column found in csv')
+            raise KeyError('Specified data column does not exist')
         log_prices = np.log(prices)
         pt_prices= Tensor(log_prices)
         self.transforms = transforms if transforms else []
