@@ -103,9 +103,6 @@ class GanTrainer(ABC):
 
         if self.writer:
             
-            if not self.checkpoint:
-                self.writer.delete_all_tensorboard_events()
-                
             # Show dataset samples
             training_examples = item(next(iter(data_loader)))
             if self.device:

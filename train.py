@@ -22,7 +22,6 @@ def main():
     parser.add_argument('--model-dir', default=None, help='Directory to save models to.')
     parser.add_argument('--tboard-dir', default=None, help='Directory to save tensorboard logs to.')
 
-    # python train.py  --tboard-dir ./runs/wgan-gp/ --epochs 10
     args = parser.parse_args()
 
     LATENT_DIM=100
@@ -32,11 +31,11 @@ def main():
     import os
     from torch.utils.data import DataLoader
 
-    if os.path.isfile('./data/train_data.pt'):
-        dataset = torch.load('./data/train_data.pt')
-    else:
-        dataset = ForexData(args.data,SEQ_LENGTH)
-        torch.save(dataset, './data/train_data.pt')
+    # if os.path.isfile('./data/train_data.pt'):
+    #     dataset = torch.load('./data/train_data.pt')
+    # else:
+    dataset = ForexData(args.data_csv, args.data_column,SEQ_LENGTH)
+    # torch.save(dataset, './data/train_data.pt')
 
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
@@ -48,7 +47,16 @@ def main():
 
     # Use GPU if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    
+    # Make dirs
+    if args.model_dir is not None:
+        if not os.path.isdir(args.model_dir):
+            os.makedirs(args.model_dir)
+    if args.tboard_dir is not None:
+        if not os.path.isdir(args.tboard_dir):
+            os.makedirs(args.tboard_dir)
+    
+    # Define training methods
     trainers = {
         'wgan': WGanTrainer
             (
@@ -82,6 +90,7 @@ def main():
             ),
     }
 
+    # Train
     trainer = trainers.get(args.gan_type)
     if not trainer:
         raise ValueError(f'Invalid GAN type: {args.gan_type}')

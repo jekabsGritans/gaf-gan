@@ -9,6 +9,7 @@ def unsqueeze(x):
 
 class ForexData(Dataset):
     def __init__(self, csv, data_column, seq_length, transforms=[stretch, pt_gaf, unsqueeze]):
+        print('Loading data from {}'.format(csv))
         df = pd.read_csv(csv)
         try:
             prices = df[data_column].values
@@ -23,6 +24,7 @@ class ForexData(Dataset):
         stackable = [self._get_dynamic(idx) for idx in range(self.series.size(0) // self.seq_length)]
         stackable = list(filter(lambda x: x is not None, stackable))
         self.x = stack(stackable)
+        print('Loaded {} data points'.format(self.x.size(0)))
 
     def __len__(self):
         return self.x.size(0) // self.seq_length
