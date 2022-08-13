@@ -2,18 +2,20 @@ from torch.utils.data import Dataset
 from torch import Tensor, stack, isnan
 import pandas as pd
 import numpy as np
-
 from transforms import pt_gaf, stretch
 
 def unsqueeze(x):
     return x.unsqueeze(0)
 
 class ForexData(Dataset):
-    def __init__(self, seq_length, transforms=[stretch, pt_gaf, unsqueeze]):
-        df = pd.read_csv('data/eurusd_minute.csv')
-        prices = df['BidClose'].values
-        # log_prices = np.log(prices)
-        pt_prices= Tensor(prices)
+    def __init__(self, csv, seq_length, transforms=[stretch, pt_gaf, unsqueeze]):
+        df = pd.read_csv(csv)
+        try:
+            prices = df['Prices'].values
+        except KeyError:
+            raise KeyError('No Prices column found in csv')
+        log_prices = np.log(prices)
+        pt_prices= Tensor(log_prices)
         self.transforms = transforms if transforms else []
         self.seq_length = seq_length
         self.series = pt_prices
