@@ -32,7 +32,7 @@ def main():
     import os
     from torch.utils.data import DataLoader
 
-    if os.path.isfile('./data/forex.pt'):
+    if os.path.isfile('./data/train_data.pt'):
         dataset = torch.load('./data/train_data.pt')
     else:
         dataset = ForexData(args.data,SEQ_LENGTH)
