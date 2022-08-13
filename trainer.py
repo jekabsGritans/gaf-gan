@@ -1,44 +1,39 @@
 from tqdm import tqdm
 import torch
 import matplotlib.pyplot as plt
-from utils import rolling
+from utils import rolling, item
 import numpy as np
-from abc import ABC, abstractmethod, abstractstaticmethod
+from abc import ABC, abstractmethod
+import os
+from torch.utils.tensorboard import SummaryWriter
+import torchvision
 
 class GanTrainer(ABC):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, static_samples=9, epoch_callback=None):
+                latent_dimension, device, static_samples=16, model_dir=None,
+                write_dir=None, checkpoint=None, checkpoint_interval=0):
         self.g = generator
         self.c = critic
+
+
+        self.checkpoint = checkpoint
+        self.checkpoint_interval = checkpoint_interval
+        self.writer = None
+        self.write_dir = write_dir
         self.g_optim = gen_optimizer
         self.c_optim = critic_optimizer
         self.latent_dim = latent_dimension
         self.device = device
-
-        if self.device:
-            self.c.to(self.device)
-            self.g.to(self.device)
-        
+        self.model_dir = model_dir
+        self.write_dir = write_dir
         self.losses = {'g': [], 'c': []}
-
         self._curr_epoch = 0
         self._epochs = 0
-
         self._n_static_samples = static_samples
         latent_shape = (self._n_static_samples, self.latent_dim)
         self._static_noise = self.sample_latent(latent_shape)   
-        if self.device:
-            self._static_noise = self._static_noise.to(self.device)
-
         self.static_samples = []
-
-        self.epoch_callback = epoch_callback
-
         self._step_num = 0
-
-    def save_sample(self):
-        sample = self.g(self._static_noise).detach().cpu().numpy()
-        self.static_samples.append(sample)
 
     @abstractmethod
     def train_critic_iteration(self, x_real):
@@ -49,8 +44,33 @@ class GanTrainer(ABC):
         pass
 
     @abstractmethod
-    def train_epoch(self, data_loader):
+    def train_batch(self, x_real):
         pass
+
+    def train_epoch(self, data_loader):
+        for batch in self.epoch_wrapper(data_loader):
+            self.train_batch(batch)
+            
+            if self._step_num % 10 == 0:
+                self.update_stats()
+
+            self._step_num += 1
+    
+    def update_stats(self):
+        static_samples = self.get_static_samples()
+        assert not torch.isnan(static_samples).any()
+        self.static_samples.append(static_samples)
+
+        if self.writer:
+            self.writer.add_scalars('Losses', {
+                'Generator': np.mean(self.losses['g'][-10:]),
+                'Critic': np.mean(self.losses['c'][-10:])
+            } , self._step_num)
+            
+            # Show static samples
+            grid = torchvision.utils.make_grid(static_samples)
+            self.writer.add_image('Static Samples', grid, self._step_num)
+
 
     def epoch_wrapper(self, data_loader):
         status_bar = tqdm(data_loader)
@@ -58,15 +78,61 @@ class GanTrainer(ABC):
         return status_bar
 
     def train(self, data_loader, epochs):
+
+        if self.checkpoint:
+            self.g.load_state_dict(torch.load(os.path.join(self.checkpoint, 'g.pt')))
+            self.c.load_state_dict(torch.load(os.path.join(self.checkpoint, 'c.pt')))
+
+        self.writer = SummaryWriter(self.write_dir) if self.write_dir else None
+
+        if self.device:
+            self.c.to(self.device)
+            self.g.to(self.device)
+
+            self._static_noise = self._static_noise.to(self.device)
+
         self._step_num=0
-        self.save_sample()
-        print(f"Training...")
+        
+        static_samples = self.get_static_samples()
+        self.static_samples.append(static_samples)
+
+        if self.writer:
+            
+            if not self.checkpoint:
+                self.writer.delete_all_tensorboard_events()
+                
+            # Show dataset samples
+            training_examples = item(next(iter(data_loader)))
+            if self.device:
+                training_examples = training_examples.to(self.device)
+            grid = torchvision.utils.make_grid(training_examples)
+            self.writer.add_image('Training Batch', grid, 0)
+
+            # Visualize model
+            self.writer.add_graph(self.c, training_examples)
+
+            # Show pre-training static samples
+            grid = torchvision.utils.make_grid(static_samples)
+            self.writer.add_image('Static Samples', grid, 0)
+
+        print("Training...")
         self._epochs = epochs
         for epoch in range(epochs):
             self._curr_epoch = epoch+1
             self.train_epoch(data_loader)
-            if self.epoch_callback:
-                self.epoch_callback(self)
+            if self.checkpoint_interval and (epoch+1) % self.checkpoint_interval == 0:
+                self.save_progress()
+
+        self.save_progress()
+        print("Training complete.")
+
+        if self.writer:
+            # Add video of static sample progression
+            static_samples = torch.stack(self.static_samples, axis=0).transpose(1,0)
+            self.writer.add_video('Static Samples', static_samples, 0, fps=30)
+
+            self.writer.close()
+
         
     def sample_generator(self, n):
         latent_shape = (n, self.latent_dim)
@@ -82,6 +148,9 @@ class GanTrainer(ABC):
             noise = noise.to(self.device)
         return self.g(noise).detach().cpu().numpy()
 
+    def get_static_samples(self):
+        return self.g(self._static_noise).detach()
+
     def plot_losses(self):
         plt.plot(self.losses['g'], label='Generator')
         plt.plot(self.losses['c'], label='Critic')
@@ -92,20 +161,36 @@ class GanTrainer(ABC):
     def sample_latent(shape):
         sample = torch.randn(shape)
         return sample
+    
+    def save_progress(self):
+        if self.model_dir:
+            torch.save(self.g.state_dict(), f'{self.model_dir}/g.pt')
+            torch.save(self.c.state_dict(), f'{self.model_dir}/c.pt')
+
 
 
 class ClassicalGanTrainer(GanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, static_samples, epoch_callback):
+                latent_dimension, device, static_samples=16, model_dir=None,
+                write_dir=None, checkpoint=None, checkpoint_interval=0):
     
-        super().__init__(generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, static_samples, epoch_callback)
+        super().__init__(
+                generator=generator,
+                critic=critic,
+                gen_optimizer=gen_optimizer,
+                critic_optimizer=critic_optimizer,
+                latent_dimension=latent_dimension,
+                device=device,
+                static_samples=static_samples,
+                model_dir=model_dir,
+                write_dir=write_dir,
+                checkpoint=checkpoint,
+                checkpoint_interval=checkpoint_interval
+                )
 
     
     def train_critic_iteration(self, x_real):
-        if isinstance(x_real, (list, tuple)):
-            x_real = x_real[0]
-
+        x_real = item(x_real)
         if self.device:
             x_real = x_real.to(self.device)
 
@@ -119,9 +204,7 @@ class ClassicalGanTrainer(GanTrainer):
         self.losses['c'].append(loss.item())
     
     def train_gen_iteration(self, x_real):
-        if isinstance(x_real, (list, tuple)):
-            x_real = x_real[0]
-        batch_size = x_real.size(0)
+        batch_size = item(x_real).size(0)
         x_fake = self.sample_generator(batch_size)
 
         loss = -torch.log(self.c(x_fake)).mean()
@@ -130,19 +213,18 @@ class ClassicalGanTrainer(GanTrainer):
         self.g_optim.step()
         self.losses['g'].append(loss.item())
 
-    def train_epoch(self, data_loader):
-        for x_real in self.epoch_wrapper(data_loader):
-            self.train_critic_iteration(x_real)
-            self.train_gen_iteration(x_real)
+    def train_batch(self, x_real):
+        if self.device:
+            x_real = x_real.to(self.device)
 
-            if self._step_num % 10 == 0:
-                self.save_sample()
-            
-            self._step_num += 1
+        self.train_critic_iteration(x_real)
+        self.train_gen_iteration(x_real)
+
 
 class WGanTrainer(GanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, static_samples=9, epoch_callback=None,
+                latent_dimension, device, static_samples=16, model_dir=None,
+                write_dir=None, checkpoint=None, checkpoint_interval=0,
             critic_iterations=5,
             weigth_clip=0.01
             ):
@@ -155,29 +237,25 @@ class WGanTrainer(GanTrainer):
                 latent_dimension=latent_dimension,
                 device=device,
                 static_samples=static_samples,
-                epoch_callback=epoch_callback,
+                model_dir=model_dir,
+                write_dir=write_dir,
+                checkpoint=checkpoint,
+                checkpoint_interval=checkpoint_interval
                 )
         self._step_num=0
 
         self.weight_clip = weigth_clip
         self.critic_iterations = critic_iterations
         
-    def train_epoch(self, data_loader):
-        for x_real in self.epoch_wrapper(data_loader):
-            if isinstance(x_real, (list, tuple)):
-                x_real = x_real[0]
-            x_real = x_real.float()
-            if self.device:
-                x_real = x_real.to(self.device)
+    def train_batch(self, x_real):
+        x_real = item(x_real).float()
+        if self.device:
+            x_real = x_real.to(self.device)
 
-            self.train_critic_iteration(x_real)
-            if self._step_num % self.critic_iterations == 0:
-                self.train_gen_iteration(x_real)
-            
-            if self._step_num % 10 == 0:
-                self.save_sample()
-                
-            self._step_num += 1
+        self.train_critic_iteration(x_real)
+        if self._step_num % self.critic_iterations == 0:
+            self.train_gen_iteration(x_real)
+        
 
     def train_critic_iteration(self, x_real):
         batch_size = x_real.size(0)
@@ -219,8 +297,9 @@ class WGanTrainer(GanTrainer):
 
 class WGanGpTrainer(WGanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device=None, static_samples=9, epoch_callback=None,
-                critic_iterations=5,
+                latent_dimension, device=None, static_samples=9,
+                model_dir=None, write_dir=None, checkpoint=None,
+                checkpoint_interval=None, critic_iterations=5,
             gp_weight=10):
 
         super().__init__(
@@ -231,7 +310,10 @@ class WGanGpTrainer(WGanTrainer):
             latent_dimension=latent_dimension,
             device=device,
             static_samples=static_samples,
-            epoch_callback=epoch_callback,
+            model_dir=model_dir,
+            write_dir=write_dir,
+            checkpoint=checkpoint,
+            checkpoint_interval=checkpoint_interval,
             critic_iterations=critic_iterations,
             )
         
