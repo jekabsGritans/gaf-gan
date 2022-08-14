@@ -1,39 +1,25 @@
 from torch.utils.data import Dataset
-from torch import Tensor, stack, isnan
 import pandas as pd
 import numpy as np
-from transforms import pt_gaf, stretch
+from transforms import pt_gaf, stretch, st_scale
+import torch
 
-def unsqueeze(x):
-    return x.unsqueeze(0)
+class ForexGafData(Dataset):
+    def __init__(self, prices, seq_length):
+        prices = np.array(prices)
+        values = np.log(prices)
+        values = values[:len(values) // seq_length * seq_length]
+        tensor = torch.from_numpy(values).float().view(-1, seq_length)
+        tensor = stretch(tensor)
+        tensor = pt_gaf(tensor)
 
-class ForexData(Dataset):
-    def __init__(self, csv, data_column, seq_length, transforms=[stretch, pt_gaf, unsqueeze]):
-        print('Loading data from {}'.format(csv))
-        df = pd.read_csv(csv)
-        try:
-            prices = df[data_column].values
-        except KeyError:
-            raise KeyError('Specified data column does not exist')
-        log_prices = np.log(prices)
-        pt_prices= Tensor(log_prices)
-        self.transforms = transforms if transforms else []
-        self.seq_length = seq_length
-        self.series = pt_prices
-
-        stackable = [self._get_dynamic(idx) for idx in range(self.series.size(0) // self.seq_length)]
-        stackable = list(filter(lambda x: x is not None, stackable))
-        self.x = stack(stackable)
-        print('Loaded {} data points'.format(self.x.size(0)))
+        # Remove matrices where nan is present
+        tensor = tensor[~torch.isnan(tensor.view(tensor.size(0),-1)).any(axis=1)]
+        self.x = tensor.view(-1, 1, seq_length, seq_length)
 
     def __len__(self):
-        return self.x.size(0) // self.seq_length
+        return self.x.size(0) 
 
     def __getitem__(self, idx):
-        return self.x[idx]
-           
-    def _get_dynamic(self, idx):
-        data = self.series[idx * self.seq_length : (idx + 1) * self.seq_length]
-        for transform in self.transforms:
-            data = transform(data)
-        return data if not isnan(data).any() else None
+        out = self.x[idx]
+        return out

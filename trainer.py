@@ -11,10 +11,13 @@ import torchvision
 
 class GanTrainer(ABC):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, static_samples=16, model_dir=None,
-                write_dir=None, checkpoint=None, checkpoint_interval=0):
+                latent_dimension, device, critic_iterations=1, static_samples=16,
+                model_dir=None, write_dir=None, checkpoint=None,
+                checkpoint_interval=0):
+        
         self.g = generator
         self.c = critic
+        self.critic_iterations = critic_iterations
         self.checkpoint = checkpoint
         self.checkpoint_interval = checkpoint_interval
         self.writer = None
@@ -43,14 +46,14 @@ class GanTrainer(ABC):
     def train_gen_iteration(self, x_real):
         pass
 
-    @abstractmethod
-    def train_batch(self, x_real):
-        pass
 
     def train_epoch(self, data_loader):
         for batch in self.epoch_wrapper(data_loader):
-            self.train_batch(batch)
+            self.train_critic_iteration(batch)
             
+            if self._step_num % self.critic_iterations == 0:
+                self.train_gen_iteration(batch)
+
             if self._step_num % 10 == 0:
                 self.update_stats()
 
@@ -167,12 +170,6 @@ class GanTrainer(ABC):
     def get_static_samples(self):
         return self.g(self._static_noise).detach()
 
-    def plot_losses(self):
-        plt.plot(self.losses['g'], label='Generator')
-        plt.plot(self.losses['c'], label='Critic')
-        plt.legend()
-        plt.show()
-    
     @staticmethod
     def sample_latent(shape):
         sample = torch.randn(shape)
@@ -189,12 +186,13 @@ class GanTrainer(ABC):
 
 class ClassicalGanTrainer(GanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, static_samples=16, model_dir=None,
-                write_dir=None, checkpoint=None, checkpoint_interval=0):
+                latent_dimension, device, critic_iterations=1, static_samples=16,
+                model_dir=None, write_dir=None, checkpoint=None, checkpoint_interval=0):
     
         super().__init__(
                 generator=generator,
                 critic=critic,
+                critic_iterations=critic_iterations,
                 gen_optimizer=gen_optimizer,
                 critic_optimizer=critic_optimizer,
                 latent_dimension=latent_dimension,
@@ -205,6 +203,7 @@ class ClassicalGanTrainer(GanTrainer):
                 checkpoint=checkpoint,
                 checkpoint_interval=checkpoint_interval
                 )
+        
 
     
     def train_critic_iteration(self, x_real):
@@ -214,42 +213,62 @@ class ClassicalGanTrainer(GanTrainer):
 
         x_fake = self.sample_generator(x_real.size(0))
 
-        loss = -(torch.log(self.c(x_real)).mean() + torch.log(1 - self.c(x_fake)).mean())
+        fake_pred = self.c(x_fake)
+        real_pred = self.c(x_real)
+
+        criterion = torch.nn.BCELoss()
+        sones = torch.FloatTensor(x_real.size(0),1).uniform_(0.8,1.1)
+        szeros = torch.FloatTensor(x_real.size(0),1).uniform_(0.0,0.3)
+        if self.device:
+            sones = sones.to(self.device)
+            szeros = szeros.to(self.device)
+
+        loss_real = criterion(real_pred, sones)
+        loss_fake = criterion(fake_pred, szeros)
+        loss_c = (loss_real + loss_fake) / 2
 
         self.c_optim.zero_grad()
-        loss.backward()
+        loss_c.backward(retain_graph=True)
         self.c_optim.step()
-        self.losses['c'].append(loss.item())
-    
-    def train_gen_iteration(self, x_real):
-        batch_size = item(x_real).size(0)
-        x_fake = self.sample_generator(batch_size)
 
-        loss = -torch.log(self.c(x_fake)).mean()
-        self.g_optim.zero_grad()
-        loss.backward()
-        self.g_optim.step()
-        self.losses['g'].append(loss.item())
-
-    def train_batch(self, x_real):
+        # Train gen
+        fake_pred= self.c(x_fake)
+        sones = torch.FloatTensor(x_real.size(0),1).uniform_(0.8,1.1)
         if self.device:
-            x_real = x_real.to(self.device)
+            sones = sones.to(self.device)
+        loss_g = criterion(fake_pred, sones)
+        self.g_optim.zero_grad()
+        loss_g.backward()
+        self.g_optim.step()
 
-        self.train_critic_iteration(x_real)
-        self.train_gen_iteration(x_real)
+        self.losses['c'].append(loss_c.item())
+        self.losses['g'].append(loss_g.item())
+
+    def train_gen_iteration(self, x_real):
+        pass
+        # batch_size = item(x_real).size(0)
+        # x_fake = self.sample_generator(batch_size)
+ 
+        # loss = 
+
+        # self.g_optim.zero_grad()
+        # loss.backward()
+        # self.g_optim.step()
+        # self.losses['g'].append(loss.item())
 
 
 class WGanTrainer(GanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device, static_samples=16, model_dir=None,
-                write_dir=None, checkpoint=None, checkpoint_interval=0,
-            critic_iterations=5,
+                latent_dimension, device=None, critic_iterations=5,
+                static_samples=16, model_dir=None, write_dir=None,
+                checkpoint=None, checkpoint_interval=0,
             weigth_clip=0.01
             ):
 
         super().__init__(
                 generator=generator,
                 critic=critic,
+                critic_iterations=critic_iterations,
                 gen_optimizer=gen_optimizer,
                 critic_optimizer=critic_optimizer,
                 latent_dimension=latent_dimension,
@@ -264,15 +283,6 @@ class WGanTrainer(GanTrainer):
 
         self.weight_clip = weigth_clip
         self.critic_iterations = critic_iterations
-        
-    def train_batch(self, x_real):
-        x_real = item(x_real).float()
-        if self.device:
-            x_real = x_real.to(self.device)
-
-        self.train_critic_iteration(x_real)
-        if self._step_num % self.critic_iterations == 0:
-            self.train_gen_iteration(x_real)
         
 
     def train_critic_iteration(self, x_real):
@@ -306,23 +316,18 @@ class WGanTrainer(GanTrainer):
 
         self.losses['g'].append(loss_gen.item())
     
-    def plot_losses(self):
-        plt.plot(rolling(self.losses['g'], 10), label='Generator')
-        plt.plot(rolling(self.losses['c'][::self.critic_iterations], 10), label='Critic')
-        plt.legend()
-        plt.show()
-
-
+    
 class WGanGpTrainer(WGanTrainer):
-    def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
-                latent_dimension, device=None, static_samples=16,
-                model_dir=None, write_dir=None, checkpoint=None,
-                checkpoint_interval=None, critic_iterations=5,
+    def __init__(self, generator, critic, gen_optimizer,
+                critic_optimizer, latent_dimension, device=None,
+                critic_iterations=5, static_samples=16, model_dir=None,
+                write_dir=None, checkpoint=None, checkpoint_interval=None,
             gp_weight=10):
 
         super().__init__(
             generator=generator,
             critic=critic,
+            critic_iterations=critic_iterations,
             gen_optimizer=gen_optimizer,
             critic_optimizer=critic_optimizer,
             latent_dimension=latent_dimension,
@@ -332,7 +337,6 @@ class WGanGpTrainer(WGanTrainer):
             write_dir=write_dir,
             checkpoint=checkpoint,
             checkpoint_interval=checkpoint_interval,
-            critic_iterations=critic_iterations,
             )
         
         self.gp_weight = gp_weight
@@ -358,7 +362,9 @@ class WGanGpTrainer(WGanTrainer):
                                         create_graph=True, retain_graph=True, only_inputs=True)[0]
         
         # gradient_penalty = ((gradients_norm - 1) ** 2).mean() * self.gp_weight
-        
+        # gradient_norm = gradients.view(gradients.size(0), -1).norm(2, dim=1)
+        # gradient_penalty = torch.mean((gradient_norm - 1) ** 2) * self.gp_weight
+
         gradient_penalty = torch.mean((1. - torch.sqrt(1e-12+torch.sum(gradients.view(gradients.size(0), -1)**2, dim=1)))**2)
 
         return gradient_penalty
@@ -376,7 +382,7 @@ class WGanGpTrainer(WGanTrainer):
         c_fake = self.c(x_fake)
 
         gp = self._gradient_penalty(x_real, x_fake)
-        critic_loss = -(torch.mean(c_real) - torch.mean(c_fake)) + gp
+        critic_loss = -(torch.mean(c_real) - torch.mean(c_fake))*0.5 + gp*self.gp_weight
         critic_loss.backward()
         self.c_optim.step()
         
@@ -398,12 +404,25 @@ class WGanGpTrainer(WGanTrainer):
         gen_loss.backward()
         self.g_optim.step()
         
-        self.losses['g'].append(gen_loss.item())
+        self.losses['g'].append(-gen_loss.item())
 
-    def plot_losses(self):
-        plt.plot(rolling(self.losses['g'], 10), label='Generator')
+    def update_stats(self):
+        static_samples = self.get_static_samples()
+        assert not torch.isnan(static_samples).any()
+        self.static_samples.append(static_samples)
 
-        c_wo_gp = np.array(self.losses['c']) - np.array(self.losses['gp'])
-        plt.plot(rolling(c_wo_gp[::self.critic_iterations], 10), label='Critic')
-        plt.legend()
-        plt.show() 
+        if self.writer:
+            self.writer.add_scalars('Losses', {
+                'Generator': np.mean(self.losses['g'][-10:]),
+                'Critic': np.mean(self.losses['c'][-10:]),
+                'Gradient Penalty': np.mean(self.losses['gp'][-10:]),
+            } , self._step_num)
+            
+            # Show static samples
+            grid = torchvision.utils.make_grid(static_samples)
+            self.writer.add_image('Static Samples', grid, self._step_num)
+
+            # Show dynamic samples
+            dynamic_samples = self.sample_generator(self._n_static_samples)
+            grid = torchvision.utils.make_grid(dynamic_samples)
+            self.writer.add_image('Dynamic Samples', grid, self._step_num)

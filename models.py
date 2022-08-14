@@ -3,25 +3,31 @@ import torch.nn as nn
 import torch
 
 class Discriminator(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, sigmoid=False) -> None:
         super(Discriminator, self).__init__()
-        self.main = nn.Sequential(
+        layers = [
             # Input is 1 x 32 x 32
+
             nn.Conv2d(1, 64, (4, 4), (2, 2), (1, 1), bias=True),
             nn.LeakyReLU(0.2, True),
             # State size. 64 x 16 x 16
             nn.Conv2d(64, 128, (4, 4), (2, 2), (1, 1), bias=False),
-            nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2, True),
             # State size. 128 x 8 x 8
             nn.Conv2d(128, 256, (4, 4), (2, 2), (1, 1), bias=False),
-            nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2, True),
             # State size. 512 x 4 x 4
-            nn.Conv2d(256, 1, (4, 4), (1, 1), (0, 0), bias=True),
-            # nn.Sigmoid() # We want critic to be unbounded
-        )
+            nn.Conv2d(256, 512, (4, 4), (2, 2), (1, 1), bias=False),
+            nn.LeakyReLU(0.2, True),
 
+            nn.Conv2d(512, 1, (4, 4), (1, 1), (0, 0), bias=True),
+        ]
+        if sigmoid:
+            layers.append(nn.Sigmoid())
+
+        self.main = nn.Sequential(*layers)
+
+            
     def forward(self, x: Tensor) -> Tensor:
         out = self.main(x)
         out = torch.flatten(out, 1)
@@ -30,21 +36,27 @@ class Discriminator(nn.Module):
 class Generator(nn.Module):
     def __init__(self) -> None:
         super(Generator, self).__init__()
-        self.fc = nn.Linear(100, 256 * 4 * 4)
+        self.fc = nn.Linear(100, 512 * 4 * 4)
         self.cnn = nn.Sequential(
+            nn.ConvTranspose2d(512, 256, (4, 4), (2, 2), (1, 1), bias=False),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, True),
+
             nn.ConvTranspose2d(256, 128, (4, 4), (2, 2), (1, 1), bias=False),
             nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.3, True),
+            nn.LeakyReLU(0.2, True),
+
             nn.ConvTranspose2d(128, 64, (4, 4), (2, 2), (1, 1), bias=False),
             nn.BatchNorm2d(64),
-            nn.LeakyReLU(0.3,True),
+            nn.LeakyReLU(0.2,True),
             nn.ConvTranspose2d(64, 1, (4, 4), (2, 2), (1, 1), bias=True),
+
             nn.Tanh()
         )
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.fc(x)
-        x = x.view(x.size(0), 256, 4, 4)
+        x = x.view(x.size(0), 512, 4, 4)
         out = self.cnn(x)
         return out
 
