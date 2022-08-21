@@ -3,12 +3,11 @@ import torch.nn as nn
 import torch
 
 class Discriminator(nn.Module):
-    def __init__(self, sigmoid=False) -> None:
+    def __init__(self, channels=2, sigmoid=False) -> None:
         super(Discriminator, self).__init__()
         layers = [
-            # Input is 1 x 32 x 32
-
-            nn.Conv2d(1, 64, (4, 4), (2, 2), (1, 1), bias=True),
+            # Input is 3 x 32 x 32
+            nn.Conv2d(channels, 64, (4, 4), (2, 2), (1, 1), bias=True),
             nn.LeakyReLU(0.2, True),
             # State size. 64 x 16 x 16
             nn.Conv2d(64, 128, (4, 4), (2, 2), (1, 1), bias=False),
@@ -34,7 +33,7 @@ class Discriminator(nn.Module):
         return out
 
 class Generator(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, channels=2) -> None:
         super(Generator, self).__init__()
         self.fc = nn.Linear(100, 512 * 4 * 4)
         self.cnn = nn.Sequential(
@@ -49,7 +48,7 @@ class Generator(nn.Module):
             nn.ConvTranspose2d(128, 64, (4, 4), (2, 2), (1, 1), bias=False),
             nn.BatchNorm2d(64),
             nn.LeakyReLU(0.2,True),
-            nn.ConvTranspose2d(64, 1, (4, 4), (2, 2), (1, 1), bias=True),
+            nn.ConvTranspose2d(64, channels, (4, 4), (2, 2), (1, 1), bias=True), 
 
             nn.Tanh()
         )

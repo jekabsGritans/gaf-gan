@@ -1,5 +1,4 @@
 **/__pycache__
 **/data/*
 **/.ipynb_checkpoints
-runs/
-models/
+**/experiments

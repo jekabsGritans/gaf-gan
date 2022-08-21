@@ -10,7 +10,7 @@ def main():
     parser = argparse.ArgumentParser('Train a Wasserstein imaged-based-GAN on time-series data.')
     parser.add_argument('--data-csv', type=str, default='data/eurusd_minute.csv', help="Path to the data csv file.")
     parser.add_argument('--data-column', type=str, default='BidClose', help="Name of the column in the csv file that contains the time-series data.")
-    parser.add_argument('--encoding', type=str, default='gaf', help="Encoding to use for the time-series data. Options are 'gaf', 'noisy_gaf', and 'simple'.")
+    parser.add_argument('--encoding', type=str, default='gaf', help="Encoding to use for the time-series data. Options are 'gaf', and 'simple'.")
     parser.add_argument('--gan-type', default='wgan-gp', help='Type of GAN to use. One of "wgan" or "wgan-gp".')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
@@ -27,12 +27,13 @@ def main():
     args = parser.parse_args()
 
     LATENT_DIM=100
-    SEQ_LENGTH=32
+    SEQ_LENGTH=64
 
     # Set random seed
     torch.manual_seed(args.seed)
 
     # Load data
+    print('Loading data...')
     import os
     from torch.utils.data import DataLoader
 
@@ -44,11 +45,15 @@ def main():
 
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
-    # Create models
-    g = Generator()
-    d = Discriminator()
-    g._initialize_weights()
 
+    # Create models
+    print('Creating models...')
+
+    channels = {'gaf':2, 'simple':1}[args.encoding]
+
+    g = Generator(channels=channels)
+    d = Discriminator(channels=channels)
+    g._initialize_weights()
 
     # Use GPU if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -97,6 +102,7 @@ def main():
     }
 
     # Train
+    print('Selecting trainer...')
     trainer = trainers.get(args.gan_type)
     if not trainer:
         raise ValueError(f'Invalid GAN type: {args.gan_type}')

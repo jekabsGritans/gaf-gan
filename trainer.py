@@ -1,8 +1,7 @@
-from sysconfig import get_path
 from tqdm import tqdm
 import torch
 import matplotlib.pyplot as plt
-from utils import rolling, item
+from utils import  item
 import numpy as np
 from abc import ABC, abstractmethod
 import os
@@ -72,21 +71,28 @@ class GanTrainer(ABC):
             } , self._step_num)
             
             # Show static samples
-            grid = torchvision.utils.make_grid(static_samples)
-            self.writer.add_image('Static Samples', grid, self._step_num)
+            self.display_samples(static_samples, 'Static Samples', self._step_num)
 
             # Show dynamic samples
             dynamic_samples = self.sample_generator(self._n_static_samples)
-            grid = torchvision.utils.make_grid(dynamic_samples)
-            self.writer.add_image('Dynamic Samples', grid, self._step_num)
-
-
-
+            self.display_samples(dynamic_samples, 'Dynamic Samples', self._step_num)
 
     def epoch_wrapper(self, data_loader):
         status_bar = tqdm(data_loader)
         status_bar.set_description(f'Epoch [{self._curr_epoch}/{self._epochs}]')
         return status_bar
+
+    def display_samples(self, samples, title, num):
+        display_samples = samples.detach().clone()
+        grid = torchvision.utils.make_grid(display_samples)
+
+        # Tensorboard only supports 1 or 3 channels
+        if grid.size(0) == 2:
+            zeros = torch.zeros(1, grid.size(1), grid.size(2))
+            if self.device:
+                zeros = zeros.to(self.device)
+            grid = torch.cat((grid, zeros), dim=0)
+        self.writer.add_image(title, grid, num)
 
     def train(self, data_loader, epochs):
 
@@ -125,15 +131,14 @@ class GanTrainer(ABC):
             training_examples = item(next(iter(data_loader)))
             if self.device:
                 training_examples = training_examples.to(self.device)
-            grid = torchvision.utils.make_grid(training_examples)
-            self.writer.add_image('Training Batch', grid, 0)
+
+            self.display_samples(training_examples, 'Training Batch', 0)
 
             # Visualize model
             self.writer.add_graph(self.c, training_examples)
 
             # Show pre-training static samples
-            grid = torchvision.utils.make_grid(static_samples)
-            self.writer.add_image('Progress', grid, 0)
+            self.display_samples(static_samples, 'Static Samples', 0)
 
         print("Training...")
         self._epochs = epochs
@@ -182,9 +187,8 @@ class GanTrainer(ABC):
             dirpath = os.path.join(self.model_dir, 'checkpoints', f'{self._checkpoint_num}')
             g_path = os.path.join(dirpath, 'g.pt')
             c_path = os.path.join(dirpath, 'c.pt')
-            os.makedirs(g_path, exist_ok=True)
+            os.makedirs(dirpath, exist_ok=True)
             torch.save(self.g.state_dict(), g_path)
-            os.makedirs(c_path, exist_ok=True)
             torch.save(self.c.state_dict(), c_path)
             self._checkpoint_num += 1
 
@@ -399,10 +403,8 @@ class WGanGpTrainer(WGanTrainer):
             } , self._step_num)
             
             # Show static samples
-            grid = torchvision.utils.make_grid(static_samples)
-            self.writer.add_image('Static Samples', grid, self._step_num)
+            self.display_samples(static_samples, 'Static Samples', self._step_num)
 
             # Show dynamic samples
             dynamic_samples = self.sample_generator(self._n_static_samples)
-            grid = torchvision.utils.make_grid(dynamic_samples)
-            self.writer.add_image('Dynamic Samples', grid, self._step_num)
+            self.display_samples(dynamic_samples, 'Dynamic Samples', self._step_num)
