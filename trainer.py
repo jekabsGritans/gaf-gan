@@ -1,3 +1,4 @@
+from sysconfig import get_path
 from tqdm import tqdm
 import torch
 import matplotlib.pyplot as plt
@@ -178,8 +179,13 @@ class GanTrainer(ABC):
     def save_progress(self):
         if self.model_dir:
             print('Saving model checkpoint...')
-            torch.save(self.g.state_dict(), f'{self.model_dir}/g{self._checkpoint_num}.pt')
-            torch.save(self.c.state_dict(), f'{self.model_dir}/c{self._checkpoint_num}.pt')
+            dirpath = os.path.join(self.model_dir, 'checkpoints', f'{self._checkpoint_num}')
+            g_path = os.path.join(dirpath, 'g.pt')
+            c_path = os.path.join(dirpath, 'c.pt')
+            os.makedirs(g_path, exist_ok=True)
+            torch.save(self.g.state_dict(), g_path)
+            os.makedirs(c_path, exist_ok=True)
+            torch.save(self.c.state_dict(), c_path)
             self._checkpoint_num += 1
 
 
@@ -246,16 +252,6 @@ class ClassicalGanTrainer(GanTrainer):
 
     def train_gen_iteration(self, x_real):
         pass
-        # batch_size = item(x_real).size(0)
-        # x_fake = self.sample_generator(batch_size)
- 
-        # loss = 
-
-        # self.g_optim.zero_grad()
-        # loss.backward()
-        # self.g_optim.step()
-        # self.losses['g'].append(loss.item())
-
 
 class WGanTrainer(GanTrainer):
     def __init__(self, generator, critic, gen_optimizer, critic_optimizer,
@@ -302,7 +298,7 @@ class WGanTrainer(GanTrainer):
         for p in self.c.parameters():
             p.data.clamp_(-self.weight_clip, self.weight_clip)
 
-        self.losses['c'].append(loss_critic.item())
+        self.losses['c'].append(-loss_critic.item())
     
     def train_gen_iteration(self, x_real):
         batch_size = x_real.size(0)
@@ -314,7 +310,7 @@ class WGanTrainer(GanTrainer):
         loss_gen.backward()
         self.g_optim.step()
 
-        self.losses['g'].append(loss_gen.item())
+        self.losses['g'].append(-loss_gen.item())
     
     
 class WGanGpTrainer(WGanTrainer):
@@ -386,25 +382,9 @@ class WGanGpTrainer(WGanTrainer):
         critic_loss.backward()
         self.c_optim.step()
         
-        self.losses['c'].append(critic_loss.item())
+        self.losses['c'].append(-critic_loss.item())
         self.losses['gp'].append(gp.item())
 
-    def train_gen_iteration(self, x_real):
-        batch_size = x_real.size(0)
-        x_fake = self.sample_generator(batch_size)
-
-        if self.device:
-            x_real = x_real.to(self.device)
-        
-        self.g_optim.zero_grad()
-
-        c_fake = self.c(x_fake).view(-1)
-
-        gen_loss = -torch.mean(c_fake)
-        gen_loss.backward()
-        self.g_optim.step()
-        
-        self.losses['g'].append(-gen_loss.item())
 
     def update_stats(self):
         static_samples = self.get_static_samples()

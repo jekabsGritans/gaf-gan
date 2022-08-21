@@ -6,6 +6,15 @@ def pt_gaf(x):
     x = torch.cos(x)
     return x
 
+def pt_noisy_gaf(x):
+    x = pt_gaf(x)
+    x = torch.randn_like(x) * 0.1 + x
+    return x
+
+def simple_raster(x):
+    x = x.view(-1,1,x.size(1))
+    mat = x.repeat(1,x.size(2),1)
+    return mat
 
 def reverse_gaf(mats):
     vals = torch.diagonal(mats, dim1=1, dim2=2)
