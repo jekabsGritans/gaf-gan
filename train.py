@@ -10,7 +10,7 @@ def main():
     parser = argparse.ArgumentParser('Train a Wasserstein imaged-based-GAN on time-series data.')
     parser.add_argument('--data-csv', type=str, default='data/eurusd_minute.csv', help="Path to the data csv file.")
     parser.add_argument('--data-column', type=str, default='BidClose', help="Name of the column in the csv file that contains the time-series data.")
-    parser.add_argument('--encoding', type=str, default='gaf', help="Encoding to use for the time-series data. Options are 'gaf', and 'simple'.")
+    parser.add_argument('--encoding', type=str, default='gasf', help="Encoding to use for the time-series data. Options are 'gaf', and 'simple'.")
     parser.add_argument('--gan-type', default='wgan-gp', help='Type of GAN to use. One of "wgan" or "wgan-gp".')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
@@ -21,7 +21,7 @@ def main():
     parser.add_argument('--load-checkpoint', default=None, help='Directory to load checkpoint from.')
     parser.add_argument('--checkpoint-interval', type=int, default=10, help='Number of epochs between checkpoints.')
     parser.add_argument('--model-dir', default=None, help='Directory to save models to.')
-    parser.add_argument('--tboard-dir', default=None, help='Directory to save tensorboard logs to.')
+    parser.add_argument('--tboard-dir', default='experiment/tmp', help='Directory to save tensorboard logs to.')
     parser.add_argument('--seed', type=int, default=42, help='Random seed.')
 
     args = parser.parse_args()
@@ -34,36 +34,48 @@ def main():
 
     # Load data
     print('Loading data...')
-    import os
+    import os, shutil
     from torch.utils.data import DataLoader
 
     import pandas as pd
     df = pd.read_csv(args.data_csv)
     prices = df[args.data_column].values
 
-    dataset = ForexData(prices, SEQ_LENGTH, encoding=args.encoding)
 
+    from encoders import SimpleRasterizeEncoder, GasfEncoder, RGGafEncoder
+
+    # Parameters based on encoding
+    params = {
+        'simple': {'encoder':SimpleRasterizeEncoder(), 'channels':1, 'relative':True},
+        'gasf': {'encoder':GasfEncoder(), 'channels':1, 'relative':False},
+        'rggaf': {'encoder':RGGafEncoder(), 'channels':2, 'relative':True},
+    }[args.encoding]
+
+    dataset = ForexData(prices, SEQ_LENGTH, encoder=params['encoder'], relative=params['relative'])
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
 
     # Create models
     print('Creating models...')
 
-    channels = {'gaf':2, 'simple':1}[args.encoding]
-
-    g = Generator(channels=channels)
-    d = Discriminator(channels=channels)
+    g = Generator(channels=params['channels'])
+    d = Discriminator(channels=params['channels'])
     g._initialize_weights()
 
     # Use GPU if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
+    
     # Make dirs
     if args.model_dir is not None:
         if not os.path.isdir(args.model_dir):
             os.makedirs(args.model_dir)
+
     if args.tboard_dir is not None:
         if not os.path.isdir(args.tboard_dir):
+            os.makedirs(args.tboard_dir)
+        else:
+            shutil.rmtree(args.tboard_dir)
             os.makedirs(args.tboard_dir)
     
 
