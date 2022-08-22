@@ -1,5 +1,5 @@
 from models import Discriminator, Generator
-from dataset import ForexData
+from dataset import EncodedForexData
 from trainer import WGanGpTrainer, WGanTrainer
 import torch.optim as optim
 import argparse
@@ -10,7 +10,7 @@ def main():
     parser = argparse.ArgumentParser('Train a Wasserstein imaged-based-GAN on time-series data.')
     parser.add_argument('--data-csv', type=str, default='data/eurusd_minute.csv', help="Path to the data csv file.")
     parser.add_argument('--data-column', type=str, default='BidClose', help="Name of the column in the csv file that contains the time-series data.")
-    parser.add_argument('--encoding', type=str, default='gasf', help="Encoding to use for the time-series data. Options are 'gaf', and 'simple'.")
+    parser.add_argument('--encoding', type=str, default='gasf', help="Encoding to use for the time-series data. Options are 'simple', 'gasf', 'rggaf'.")
     parser.add_argument('--gan-type', default='wgan-gp', help='Type of GAN to use. One of "wgan" or "wgan-gp".')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
@@ -51,7 +51,7 @@ def main():
         'rggaf': {'encoder':RGGafEncoder(), 'channels':2, 'relative':True},
     }[args.encoding]
 
-    dataset = ForexData(prices, SEQ_LENGTH, encoder=params['encoder'], relative=params['relative'])
+    dataset = EncodedForexData(prices, SEQ_LENGTH, encoder=params['encoder'], relative=params['relative'])
     train_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
 
