@@ -24,7 +24,7 @@ class SimpleRasterizeEncoder(Encoder):
     
     def decode(self, x) -> np.ndarray:
         """Decode a single item."""
-        return x.mean(dim=1).detach().numpy().squeeze()
+        return x.mean(dim=1).detach().cpu().numpy().squeeze()
 
 
 def _gasf(x):

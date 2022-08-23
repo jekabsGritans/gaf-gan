@@ -6,16 +6,15 @@ class Discriminator(nn.Module):
     def __init__(self, channels=2, sigmoid=False) -> None:
         super(Discriminator, self).__init__()
         layers = [
-            # Input is 3 x 32 x 32
             nn.Conv2d(channels, 64, (4, 4), (2, 2), (1, 1), bias=True),
             nn.LeakyReLU(0.2, True),
-            # State size. 64 x 16 x 16
+
             nn.Conv2d(64, 128, (4, 4), (2, 2), (1, 1), bias=False),
             nn.LeakyReLU(0.2, True),
-            # State size. 128 x 8 x 8
+
             nn.Conv2d(128, 256, (4, 4), (2, 2), (1, 1), bias=False),
             nn.LeakyReLU(0.2, True),
-            # State size. 512 x 4 x 4
+
             nn.Conv2d(256, 512, (4, 4), (2, 2), (1, 1), bias=False),
             nn.LeakyReLU(0.2, True),
 
