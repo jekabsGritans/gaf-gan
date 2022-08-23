@@ -15,7 +15,6 @@ class Encoder(ABC):
     
 class SimpleRasterizeEncoder(Encoder):
     """Broadcast array as rows to fill matrix."""
-
     def encode(self, x) -> torch.Tensor:
         """Encode batch."""
         x = x.view(-1,1,x.size(1))

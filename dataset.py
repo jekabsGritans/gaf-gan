@@ -12,7 +12,12 @@ class EncodedForexData(Dataset):
         values = values[:len(values)//seq_length*seq_length]
         tensor = torch.from_numpy(values).float().view(-1,seq_length)
 
-        tensor /= tensor.abs().max(dim=1).values.view(-1,1)
+        if relative:
+            tensor /= tensor.abs().max(dim=1).values.view(-1,1)
+        else:
+            tensor -= tensor.min(dim=1).values.view(-1,1)
+            tensor /= tensor.max(dim=1).values.view(-1,1)
+
         tensor = encoder.encode(tensor)
 
         # Remove matrices where nan is present

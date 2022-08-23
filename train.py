@@ -46,9 +46,10 @@ def main():
 
     # Parameters based on encoding
     params = {
-        'simple': {'encoder':SimpleRasterizeEncoder(), 'channels':1, 'relative':True},
+        'simple': {'encoder':SimpleRasterizeEncoder(), 'channels':1, 'relative':False},
+        'rel_simple':{'encoder':SimpleRasterizeEncoder(), 'channels':1, 'relative':True},
         'gasf': {'encoder':GasfEncoder(), 'channels':1, 'relative':False},
-        'rggaf': {'encoder':RGGafEncoder(), 'channels':2, 'relative':True},
+        # 'rggaf': {'encoder':RGGafEncoder(), 'channels':2, 'relative':True},
     }[args.encoding]
 
     dataset = EncodedForexData(prices, SEQ_LENGTH, encoder=params['encoder'], relative=params['relative'])
