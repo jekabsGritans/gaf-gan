@@ -1,7 +1,7 @@
-from distutils.command.check import check
+from src.encoders import SimpleRasterizeEncoder, GasfEncoder
 from src.models import Generator, Discriminator
 from src.dataset import get_dataset
-from src.utils import get_gp
+from src.data_utils import get_gp, get_ks, get_model_data
 from torch.utils.data import DataLoader
 import torch
 import torch.backends.cudnn as cudnn
@@ -23,8 +23,10 @@ parser.add_argument("--batch-size", type=int, default=32, help="Batch size.")
 parser.add_argument("--critic-iters", type=int, default=5, help="Number of critic iterations per generator iteration.")
 parser.add_argument("--tag", type=str, default="", help="Tag to add to experiment name.")
 parser.add_argument("--cuda", action="store_true", help="Use CUDA.")
-parser.add_argument("--epochs", type=int, default=100, help="Number of epochs to train for.")
+parser.add_argument("--steps", type=float, default=10, help="Number of steps to train for (thousands).")
 parser.add_argument("--gp-weight", type=float, default=10, help="Weight of the gradient penalty.")
+parser.add_argument("--checkpoint-every", type=int, default=2000, help="Save a checkpoint every this many steps.")
+parser.add_argument("--metrics-every", type=int, default=500, help="Save intensive metrics every this many steps.")
 
 args = parser.parse_args()
 
@@ -53,6 +55,23 @@ print("Loading dataset...")
 dataset = get_dataset(args.encoding)
 data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
+
+print("Processing data for later KS metric calculation...")
+standardize = lambda x: (x-x.mean())/x.std()
+
+simple_encoder = SimpleRasterizeEncoder()
+gasf_encoder = GasfEncoder()
+
+decoder = {
+    'simple': lambda dataset: [standardize(np.diff(simple_encoder.decode(x))) for x in dataset],
+    'relative': lambda dataset: [standardize(gasf_encoder.decode(x)) for x in dataset],
+    'gasf': lambda dataset: [standardize(np.diff(gasf_encoder.decode(x))) for x in dataset],
+}[args.encoding]
+
+dataset_data = np.concatenate(decoder(dataset))
+
+
+
 print("Loading models...")
 g = Generator(channels=1)
 c = Discriminator(channels=1)
@@ -74,17 +93,27 @@ c_optim = torch.optim.Adam(c.parameters(), lr=1e-4, betas=(0, 0.9))
 
 losses = {"g": [], "c": [], "gp": []}
 
-stepnum = 0
 
 static_noise = torch.randn(args.batch_size, 100).to(device)
-writer.add_images("Dataset sample", next(iter(data_loader)), stepnum)
-print("Starting training...")
-for epoch in range(1, args.epochs + 1):
-    batches_iter = tqdm(data_loader)
-    for x_real in batches_iter:
-        x_real = x_real.to(device)
+writer.add_images("Dataset sample", next(iter(data_loader)), 0)
 
-        batches_iter.set_description(f"Epoch [{epoch}/{args.epochs}]")
+
+print("Starting training...")
+
+steps = int(args.steps * 1000)
+checkpoint_every = args.checkpoint_every
+metrics_every = args.metrics_every
+stats_every = 50
+
+checknum=0
+stepnum = 0
+
+epochs = steps//len(data_loader)
+for epoch in range(1, epochs+1):
+    loader = tqdm(data_loader)
+    loader.set_description(f"Epoch [{epoch}/{epochs}]")
+    for x_real in loader:
+        x_real = x_real.to(device)
         
         # Train the critic
         noise = torch.randn(x_real.size(0), 100).to(device)
@@ -104,7 +133,8 @@ for epoch in range(1, args.epochs + 1):
 
         # Train the Generator       
         if stepnum % args.critic_iters == 0:
-            x_fake = g(noise.clone())
+            noise = torch.randn(x_real.size(0), 100).to(device)
+            x_fake = g(noise)
             x_fake_pred = c(x_fake)
             g_loss = -torch.mean(x_fake_pred)
             g_optim.zero_grad()
@@ -114,7 +144,7 @@ for epoch in range(1, args.epochs + 1):
             losses["g"].append(-g_loss.item())
             
 
-        if stepnum % 30 == 0:
+        if stepnum % stats_every == 0:
             writer.add_scalars("Losses", {
                 "generator": -np.mean(losses['g'][-10:]),
                 "critic": -np.mean(losses['c'][-10:]),
@@ -127,18 +157,28 @@ for epoch in range(1, args.epochs + 1):
             writer.add_images("Dynamic sample", dynamic_samples, stepnum)
 
 
+        if stepnum % metrics_every == 0:
+            # Calculate and save KS metric
+            model_data = get_model_data(g, decoder, 1000, device)
+            ks = get_ks(g, decoder, dataset_data, device=device, n=1000)
+            writer.add_scalar("KS", ks, stepnum)
+            writer.add_histogram("Model data", model_data, stepnum)
+
+
+        if stepnum % checkpoint_every == 0:
+            # Save model
+            checkpoint_dir = os.path.join(outdir, "checkpoints", f"{checknum}")
+            os.makedirs(checkpoint_dir)
+
+            torch.save(g.state_dict(), os.path.join(checkpoint_dir, "g.pt"))
+            torch.save(g.state_dict(), os.path.join(outdir, "g.pt"))
+
+            torch.save(c.state_dict(), os.path.join(checkpoint_dir, "c.pt"))
+            torch.save(c.state_dict(), os.path.join(outdir, "c.pt"))
+            checknum += 1
+
         stepnum+=1
 
-
-    # Save model
-    checkpoint_dir = os.path.join(outdir, "checkpoints", f"{epoch}")
-    os.makedirs(checkpoint_dir)
-
-    torch.save(g.state_dict(), os.path.join(checkpoint_dir, "g.pt"))
-    torch.save(g.state_dict(), os.path.join(outdir, "g.pt"))
-
-    torch.save(c.state_dict(), os.path.join(checkpoint_dir, "c.pt"))
-    torch.save(c.state_dict(), os.path.join(outdir, "c.pt"))
 
 print("Finished training.")
 writer.close()

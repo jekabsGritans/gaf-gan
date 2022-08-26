@@ -38,7 +38,7 @@ def get_dataset(method):
     prices = pd.read_csv('data/eurusd_minute.csv')['BidClose'].values
     encoder = {
         'simple': SimpleRasterizeEncoder(),
-        'rel': SimpleRasterizeEncoder(),
+        'relative': SimpleRasterizeEncoder(),
         'gasf': GasfEncoder(),
     }[method]
     return EncodedForexData(prices, SEQ_LENGTH, encoder, relative=method=='rel')

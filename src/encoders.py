@@ -44,7 +44,7 @@ class GasfEncoder(Encoder):
         """Decode a single item."""
         mat = x[0]
         vals = torch.diagonal(mat, dim1=0, dim2=1)
-        log_prices = torch.cos((torch.arccos(vals)/2)).squeeze().detach().numpy()
+        log_prices = torch.cos((torch.arccos(vals)/2)).squeeze().detach().cpu().numpy()
         return log_prices
 
     def decode_noisy(self, x) -> np.ndarray:
