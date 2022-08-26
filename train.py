@@ -1,6 +1,6 @@
-from models import Discriminator, Generator
-from dataset import EncodedForexData
-from trainer import WGanGpTrainer, WGanTrainer
+from src.models import Discriminator, Generator
+from src.dataset import EncodedForexData
+from src.trainer import WGanGpTrainer, WGanTrainer
 import torch.optim as optim
 import argparse
 import torch
@@ -10,7 +10,7 @@ def main():
     parser = argparse.ArgumentParser('Train a Wasserstein imaged-based-GAN on time-series data.')
     parser.add_argument('--data-csv', type=str, default='data/eurusd_minute.csv', help="Path to the data csv file.")
     parser.add_argument('--data-column', type=str, default='BidClose', help="Name of the column in the csv file that contains the time-series data.")
-    parser.add_argument('--encoding', type=str, default='gasf', help="Encoding to use for the time-series data. Options are 'simple', 'gasf', 'rggaf'.")
+    parser.add_argument('--encoding', type=str, default='gasf', help="Encoding to use for the time-series data. Options are 'simple', 'rel_simple', 'gasf'.")
     parser.add_argument('--gan-type', default='wgan-gp', help='Type of GAN to use. One of "wgan" or "wgan-gp".')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
@@ -19,7 +19,7 @@ def main():
     parser.add_argument('--weight-clip', type=float, default=1e-2, help='Clip weights to enforce Lipshitz constraint.')
     parser.add_argument('--penalty-weight', type=float, default=10, help='Weight of the gradient penalty used to enforce Lipschitz constraint.')
     parser.add_argument('--load-checkpoint', default=None, help='Directory to load checkpoint from.')
-    parser.add_argument('--checkpoint-interval', type=int, default=10, help='Number of epochs between checkpoints.')
+    parser.add_argument('--checkpoint-interval', type=int, default=1, help='Number of epochs between checkpoints.')
     parser.add_argument('--model-dir', default=None, help='Directory to save models to.')
     parser.add_argument('--tboard-dir', default='experiment/tmp', help='Directory to save tensorboard logs to.')
     parser.add_argument('--seed', type=int, default=42, help='Random seed.')
@@ -42,7 +42,7 @@ def main():
     prices = df[args.data_column].values
 
 
-    from encoders import SimpleRasterizeEncoder, GasfEncoder, RGGafEncoder
+    from src.encoders import SimpleRasterizeEncoder, GasfEncoder
 
     # Parameters based on encoding
     params = {
