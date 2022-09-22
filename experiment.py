@@ -53,7 +53,7 @@ writer = SummaryWriter(logdir)
 writer.add_text("args", str(args))
 
 print("Loading dataset...")
-dataset = get_dataset(args.encoding)
+dataset = get_dataset(args.encoding, path=args.dataset)
 data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
 
