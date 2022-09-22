@@ -59,7 +59,7 @@ class GasfEncoder(Encoder):
         return vals
 
 class NegGasfEncoder(Encoder):
-    """GASF with the ability to encode."""
+    """GASF with the ability to encode (-1,1)."""
 
     def encode(self, x) -> torch.Tensor:
         """Encode batch."""
