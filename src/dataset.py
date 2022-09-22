@@ -1,11 +1,11 @@
 from torch.utils.data import Dataset
-from .encoders import Encoder, SimpleRasterizeEncoder, GasfEncoder
+from .encoders import Encoder, NegGasfEncoder, SimpleRasterizeEncoder, GasfEncoder
 import numpy as np
 import pandas as pd
 import torch
 
 class EncodedForexData(Dataset):
-    def __init__(self, prices, seq_length, encoder: Encoder, relative=False):
+    def __init__(self, prices, seq_length, encoder: Encoder, relative=False, epsilon=0):
         prices = np.array(prices)
         values = np.log(prices)
         if relative:
@@ -15,10 +15,10 @@ class EncodedForexData(Dataset):
         tensor = torch.from_numpy(values).float().view(-1,seq_length)
 
         if relative:
-            tensor /= tensor.abs().max(dim=1).values.view(-1,1)
+            tensor /= (tensor.abs().max(dim=1).values.view(-1,1)+epsilon)
         else:
             tensor -= tensor.min(dim=1).values.view(-1,1)
-            tensor /= tensor.max(dim=1).values.view(-1,1)
+            tensor /= (tensor.max(dim=1).values.view(-1,1)+epsilon)
 
         tensor = encoder.encode(tensor)
 
@@ -40,5 +40,6 @@ def get_dataset(method):
         'simple': SimpleRasterizeEncoder(),
         'relative': SimpleRasterizeEncoder(),
         'gasf': GasfEncoder(),
+        'relative_gasf': NegGasfEncoder(),
     }[method]
-    return EncodedForexData(prices, SEQ_LENGTH, encoder, relative=method=='rel')
+    return EncodedForexData(prices, SEQ_LENGTH, encoder, relative='relative' in method, epsilon=1e-6 if 'gasf' in method else 0)

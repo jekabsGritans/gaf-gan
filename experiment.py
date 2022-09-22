@@ -1,4 +1,4 @@
-from src.encoders import SimpleRasterizeEncoder, GasfEncoder
+from src.encoders import SimpleRasterizeEncoder, GasfEncoder, NegGasfEncoder
 from src.models import Generator, Discriminator
 from src.dataset import get_dataset
 from src.data_utils import get_gp, get_ks, get_model_data
@@ -14,7 +14,7 @@ import numpy as np
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser("Train a WGAN with GP on image-encoded data.")
-parser.add_argument("--encoding", type=str, default="simple", choices=['simple', 'relative', 'gasf'], help="Encoding method.")
+parser.add_argument("--encoding", type=str, default="simple", choices=['simple', 'relative', 'gasf', 'relative_gasf'], help="Encoding method.")
 parser.add_argument("--load", type=str, default="", help="Path to trained weights dir (to continue training).")
 parser.add_argument("--logdir", type=str, default="experiments", help="Directory to save experiment results to.")
 parser.add_argument("--outdir", type=str, default="models", help="Directory to save checkpoints to.")
@@ -61,10 +61,12 @@ standardize = lambda x: (x-x.mean())/x.std()
 
 simple_encoder = SimpleRasterizeEncoder()
 gasf_encoder = GasfEncoder()
+neg_gasf_encoder = NegGasfEncoder()
 
 decoder = {
     'simple': lambda dataset: [standardize(np.diff(simple_encoder.decode(x))) for x in dataset],
     'relative': lambda dataset: [standardize(gasf_encoder.decode(x)) for x in dataset],
+    'relative_gasf': lambda dataset: [standardize(neg_gasf_encoder.decode(x)) for x in dataset],
     'gasf': lambda dataset: [standardize(np.diff(gasf_encoder.decode(x))) for x in dataset],
 }[args.encoding]
 
@@ -86,8 +88,8 @@ else:
 g.to(device)
 c.to(device)
 
-g_optim = torch.optim.Adam(g.parameters(), lr=1e-4, betas=(0, 0.9))
-c_optim = torch.optim.Adam(c.parameters(), lr=1e-4, betas=(0, 0.9))
+g_optim = torch.optim.Adam(g.parameters(), lr=1e-4, betas=(0.5, 0.9))
+c_optim = torch.optim.Adam(c.parameters(), lr=1e-4, betas=(0.5, 0.9))
 # g_optim = torch.optim.RMSprop(g.parameters(), lr=5e-5)
 # c_optim = torch.optim.RMSprop(c.parameters(), lr=5e-5)
 

@@ -72,8 +72,8 @@ class NegGasfEncoder(Encoder):
     
     def decode(self, x) -> np.ndarray:
         """Decode a single item."""
-        mat = torch.arccos(x[0][0])
+        mat = torch.arccos(x[0])
         diag = torch.diagonal(mat, dim1=0, dim2=1)
         negative_condition = (2*mat[0,:]-mat[0,0]-diag).abs()>1e-6 # B[0,i] - B[0,0]/2 != B[i,i]/2
         vals = torch.cos(diag/2) * (1-2*negative_condition.float()) # reverse sign if negative condition is true
-        return vals
+        return vals.detach().cpu().numpy()
