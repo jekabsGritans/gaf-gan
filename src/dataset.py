@@ -33,9 +33,9 @@ class EncodedForexData(Dataset):
         out = self.x[idx]
         return out
 
-def get_dataset(method):
+def get_dataset(method, path='data/erususd_minute.csv'):
     SEQ_LENGTH=64
-    prices = pd.read_csv('data/eurusd_minute.csv')['BidClose'].values
+    prices = pd.read_csv(path)['BidClose'].values
     encoder = {
         'simple': SimpleRasterizeEncoder(),
         'relative': SimpleRasterizeEncoder(),

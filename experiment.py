@@ -27,6 +27,7 @@ parser.add_argument("--steps", type=float, default=10, help="Number of steps to 
 parser.add_argument("--gp-weight", type=float, default=10, help="Weight of the gradient penalty.")
 parser.add_argument("--checkpoint-every", type=int, default=2000, help="Save a checkpoint every this many steps.")
 parser.add_argument("--metrics-every", type=int, default=500, help="Save intensive metrics every this many steps.")
+parser.add_argument("--dataset", type=str, default="data/eurusd_minute.csv", help="Path to eurusd dataset.")
 
 args = parser.parse_args()
 
