@@ -35,6 +35,8 @@ class GasfEncoder(Encoder):
 
     def encode(self, x) -> torch.Tensor:
         """Encode batch."""
+        if not (x.max()<=1 and x.min()>=0):
+            raise ValueError("x must be in [0,1]")
         x = torch.arccos(x)
         x = x.view(-1,1,x.size(1))+x.view(-1,x.size(1),1)
         x = torch.cos(x)
@@ -54,4 +56,24 @@ class GasfEncoder(Encoder):
         vals = torch.zeros(a)
         for n in range(x.shape[0]):
             vals[n] = (x[n,:].sum()+x[:,n].sum()-2*S)/(2*a)
+        return vals
+
+class NegGasfEncoder(Encoder):
+    """GASF with the ability to encode."""
+
+    def encode(self, x) -> torch.Tensor:
+        """Encode batch."""
+        if not x.abs().max()<1:
+            raise ValueError("x must be in (-1,1)")
+        x = torch.arccos(x)
+        x = x.view(-1,1,x.size(1))+x.view(-1,x.size(1),1)
+        x = torch.cos(x)
+        return x.view(-1,1,x.size(1), x.size(2))
+    
+    def decode(self, x) -> np.ndarray:
+        """Decode a single item."""
+        mat = torch.arccos(cos_mat)
+        diag = torch.diagonal(mat, dim1=0, dim2=1)
+        negative_condition = (2*mat[0,:]-mat[0,0]-diag).abs()>1e-6 # B[0,i] - B[0,0]/2 != B[i,i]/2
+        vals = torch.cos(diag/2) * (1-2*negative_condition.float()) # reverse sign if negative condition is true
         return vals
