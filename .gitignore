@@ -3,3 +3,4 @@
 **/.ipynb_checkpoints
 **/experiments
 **/models
+.gradient
